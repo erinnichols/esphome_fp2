@@ -50,6 +50,7 @@ void FP2Component::setup() {
 }
 
 void FP2Component::perform_reset_() {
+  last_reset_millis_ = millis();
   if (reset_pin_ != nullptr) {
     ESP_LOGI(TAG, "Performing Hardware Reset via Pin...");
     reset_pin_->setup();
@@ -130,6 +131,16 @@ void FP2Component::restart_initialization_(const char *reason) {
 void FP2Component::check_initialization_() {
   if (init_done_)
     return;
+
+  // After a soft reboot (OTA) the radar sometimes never sends its first
+  // heartbeat, and nothing else retries. Pulse the reset pin again.
+  if (last_heartbeat_millis_ == 0 && reset_pin_ != nullptr &&
+      millis() - last_reset_millis_ > NO_HEARTBEAT_RETRY_MS) {
+    ESP_LOGW(TAG, "No heartbeat %u ms after radar reset, resetting radar again",
+             (unsigned) (millis() - last_reset_millis_));
+    perform_reset_();
+    return;
+  }
 
   // We rely on handle_parsed_frame_ to set a flag or we check
   // last_heartbeat_millis_

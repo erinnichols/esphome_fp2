@@ -470,6 +470,7 @@ protected:
   GPIOPin *reset_pin_{nullptr};
   bool init_done_{false};
   uint32_t last_heartbeat_millis_{0};
+  uint32_t last_reset_millis_{0};
 
   // Configuration State
   uint8_t mounting_position_{0x01}; // Default Wall
@@ -526,6 +527,8 @@ protected:
 
   // Radar watchdog: re-run the init sequence if the heartbeat stops
   static const uint32_t HEARTBEAT_TIMEOUT_MS = 15000;
+  // Re-pulse the reset pin if no first heartbeat arrives this long after a reset
+  static const uint32_t NO_HEARTBEAT_RETRY_MS = 10000;
   uint32_t init_time_millis_{0};
 
   // Grids (Optional)
