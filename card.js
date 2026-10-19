@@ -390,10 +390,11 @@ class AqaraFP2Card extends HTMLElement {
   // units are 2.5 cm (measured: 1 m ~ 40), i.e. 20 units per 0.5 m cell.
   toGrid(x, y) {
     if (this.data.corner) return { gc: 2 + ((-x + 400) / 800) * 14, gr: (y / 800) * 14 };
-    return { gc: 8 - x / 20, gr: y / 20 };
+    const u = this.config.wall_units_per_m || 40;  // radar units per meter (wall mode)
+    return { gc: 8 - x / (u / 2), gr: y / (u / 2) };
   }
   sensorCell() { return this.data.corner ? (this.data.mounting === "right_corner" ? { gc: 16, gr: 0 } : { gc: 2, gr: 0 }) : { gc: 8, gr: 0 }; }
-  toMeters(x, y) { return this.data.corner ? { x: x / 100, y: y / 100 } : { x: x / 40, y: y / 40 }; }
+  toMeters(x, y) { return this.data.corner ? { x: x / 100, y: y / 100 } : { x: x / (this.config.wall_units_per_m || 40), y: y / (this.config.wall_units_per_m || 40) }; }
 
   // ---------------------------------------------------------------- canvas
   render() {
