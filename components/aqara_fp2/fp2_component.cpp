@@ -1002,8 +1002,11 @@ bool FP2Component::target_cell_(int16_t x, int16_t y, int &col, int &row) const 
     col = 2 + (int) ((-(float) x + 400.0f) / 800.0f * 14.0f);
     row = (int) ((float) y / 800.0f * 14.0f);
   } else {
-    col = 8 - (int) floorf((float) x / 20.0f) - 1;
-    row = (int) ((float) y / 20.0f);
+    // Wall mode: measured ~1 cm per unit (about 100 units per metre), so one
+    // 0.5 m cell is ~50 units. (The PR assumed 40 units per metre = 20 per cell.)
+    constexpr float WALL_UNITS_PER_CELL = 50.0f;
+    col = 8 - (int) floorf((float) x / WALL_UNITS_PER_CELL) - 1;
+    row = (int) ((float) y / WALL_UNITS_PER_CELL);
   }
   return col >= 0 && col <= 15 && row >= 0 && row <= 19;
 }
