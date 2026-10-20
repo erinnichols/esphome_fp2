@@ -4,6 +4,7 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
+#include <cinttypes>
 #include <cstdint>
 #include <vector>
 #include <span>
@@ -100,7 +101,7 @@ void FP2Component::loop() {
 
   if (millis() - rx_stats_last_ms_ > 60000) {
     rx_stats_last_ms_ = millis();
-    ESP_LOGD(TAG, "RX stats: bytes=%u frames=%u dropped_sync=%u ver_mismatch=%u hdr_fail=%u crc_fail=%u",
+    ESP_LOGD(TAG, "RX stats: bytes=%" PRIu32 " frames=%" PRIu32 " dropped_sync=%" PRIu32 " ver_mismatch=%" PRIu32 " hdr_fail=%" PRIu32 " crc_fail=%" PRIu32 "",
              rx_bytes_, rx_frames_, rx_dropped_sync_, rx_ver_mismatch_, rx_hdr_fail_, rx_crc_fail_);
   }
 }
@@ -740,7 +741,7 @@ void FP2Component::handle_ack_(AttrId attr_id) {
     ESP_LOGD(TAG, "ACK Received for 0x%04X", (uint16_t) attr_id);
     waiting_for_ack_attr_id_ = AttrId::INVALID;
   } else {
-    ESP_LOGW(TAG, "Unexpected ACK 0x%04X (Waiting for 0x%04X)", attr_id,
+    ESP_LOGW(TAG, "Unexpected ACK 0x%04X (Waiting for 0x%04X)", (uint16_t) attr_id,
              (uint16_t) waiting_for_ack_attr_id_);
   }
 }
@@ -845,7 +846,7 @@ void FP2Component::handle_report_(AttrId attr_id, const std::vector<uint8_t> &pa
 
     case AttrId::REALTIME_PEOPLE_NUMBER:
       if (is_u32) {
-        ESP_LOGD(TAG, "Realtime people number: %u", u32);
+        ESP_LOGD(TAG, "Realtime people number: %" PRIu32 "", u32);
         // With derived presence the count comes from the valid targets instead:
         // the radar's number includes targets in excluded / off-grid cells.
         if (people_count_sensor_ != nullptr && !derive_presence_)
@@ -854,7 +855,7 @@ void FP2Component::handle_report_(AttrId attr_id, const std::vector<uint8_t> &pa
       break;
 
     case AttrId::ONTIME_PEOPLE_NUMBER:
-      if (is_u32) ESP_LOGD(TAG, "Ontime people number: %u", u32);
+      if (is_u32) ESP_LOGD(TAG, "Ontime people number: %" PRIu32 "", u32);
       break;
 
     case AttrId::PEOPLE_COUNTING:

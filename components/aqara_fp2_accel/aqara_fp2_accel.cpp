@@ -1,13 +1,14 @@
 #include "aqara_fp2_accel.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
+#include <cinttypes>
 #include <cmath>
 
 namespace esphome {
 namespace aqara_fp2_accel {
 
 bool AqaraFP2Accel::i2c_init_bus() {
-  ESP_LOGI(TAG, "Initializing I2C bus on port %d (SDA=%d, SCL=%d, freq=%d Hz)",
+  ESP_LOGI(TAG, "Initializing I2C bus on port %d (SDA=%d, SCL=%d, freq=%" PRIu32 " Hz)",
            i2c_port_, sda_pin_, scl_pin_, frequency_);
 
   i2c_master_bus_config_t conf = {};
@@ -92,7 +93,7 @@ void AqaraFP2Accel::accel_task_(void *param) {
 }
 
 void AqaraFP2Accel::task_loop_() {
-  ESP_LOGI(TAG, "Accelerometer task started (interval: %d ms)", update_interval_ms_);
+  ESP_LOGI(TAG, "Accelerometer task started (interval: %" PRIu32 " ms)", update_interval_ms_);
 
   while (task_running_) {
     // Read and process accelerometer data
@@ -219,9 +220,9 @@ void AqaraFP2Accel::dump_config() {
   ESP_LOGCONFIG(TAG, "  I2C Port: %d", i2c_port_);
   ESP_LOGCONFIG(TAG, "  SDA Pin: GPIO%d", sda_pin_);
   ESP_LOGCONFIG(TAG, "  SCL Pin: GPIO%d", scl_pin_);
-  ESP_LOGCONFIG(TAG, "  Frequency: %d Hz", frequency_);
+  ESP_LOGCONFIG(TAG, "  Frequency: %" PRIu32 " Hz", frequency_);
   ESP_LOGCONFIG(TAG, "  I2C Address: 0x%02X", ACC_SENSOR_ADDR);
-  ESP_LOGCONFIG(TAG, "  Update Interval: %d ms", update_interval_ms_);
+  ESP_LOGCONFIG(TAG, "  Update Interval: %" PRIu32 " ms", update_interval_ms_);
   ESP_LOGCONFIG(TAG, "  Calibration X: %d", accel_corr_x_);
   ESP_LOGCONFIG(TAG, "  Calibration Y: %d", accel_corr_y_);
   ESP_LOGCONFIG(TAG, "  Calibration Z: %d", accel_corr_z_);
