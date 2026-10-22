@@ -654,7 +654,7 @@ class AqaraFP2Card extends HTMLElement {
       const post = { 0: "moving", 1: "sitting", 2: "lying", 255: "-" }[t.posture] ?? t.posture;
       const g = this.toGrid(t.x, t.y), cc = Math.floor(g.gc), cr = Math.floor(g.gr);
       const ign = !(d.edge[cr] && d.interference[cr]) || d.edge[cr][cc] || d.interference[cr][cc];
-      return `<tr style="${ign ? "opacity:.5" : ""}"><td>#${t.id}${ign ? " (ignored)" : ""}</td><td>${m.x >= 0 ? "+" : ""}${m.x.toFixed(2)}, ${m.y.toFixed(2)} m</td><td>${(t.velocity / (this.data.corner ? 100 : 40)).toFixed(2)} m/s</td><td>${post}</td><td>${t.snr}</td></tr>`;
+      return `<tr style="${ign ? "opacity:.5" : ""}"><td>#${t.id}${ign ? " (ignored)" : ""}</td><td>${m.x >= 0 ? "+" : ""}${m.x.toFixed(2)}, ${m.y.toFixed(2)} m</td><td>${(t.velocity / (this.data.corner ? 100 : (this.config.wall_units_per_m || 40))).toFixed(2)} m/s</td><td>${post}</td><td>${t.snr}</td></tr>`;
     }).join("");
   }
 
