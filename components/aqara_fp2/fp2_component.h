@@ -50,6 +50,15 @@ struct FP2Zone : public Component {
     this->map_sensor = sensor;
   }
 
+  // Tracked presence: derived from valid (non-ignored) targets inside this
+  // zone, independent of the radar's own zone occupancy report.
+  void set_tracked_presence_sensor(binary_sensor::BinarySensor *sensor) {
+    this->tracked_presence_sensor = sensor;
+  }
+  void set_target_count_sensor(sensor::Sensor *sensor) {
+    this->target_count_sensor = sensor;
+  }
+
   void set_event_sensor(text_sensor::TextSensor *sensor) {
     this->event_sensor = sensor;
   }
@@ -83,6 +92,9 @@ struct FP2Zone : public Component {
   esphome::binary_sensor::BinarySensor *motion_sensor{nullptr};
   esphome::text_sensor::TextSensor *map_sensor{nullptr};
   esphome::text_sensor::TextSensor *event_sensor{nullptr};
+  esphome::binary_sensor::BinarySensor *tracked_presence_sensor{nullptr};
+  esphome::sensor::Sensor *target_count_sensor{nullptr};
+  uint32_t tracked_last_hit_ms{0};
   GridMap grid;
   uint8_t sensitivity; // 1=Low, 2=Med, 3=High
   GridMap yaml_grid;
@@ -296,6 +308,10 @@ public:
   void set_ignore_exit_targets(bool v) { ignore_exit_targets_ = v; }
   void set_require_active_target(bool v) { require_active_target_ = v; }
   void set_absence_timeout(uint32_t ms) { absence_timeout_ms_ = ms; }
+  void set_tracked_hold(uint32_t ms) { tracked_hold_ms_ = ms; }
+  void set_wall_units_per_m(float v) { wall_units_per_m_ = v; }
+  void set_valid_targets_sensor(text_sensor::TextSensor *sensor) { valid_targets_sensor_ = sensor; }
+  void set_tracked_presence_sensor(binary_sensor::BinarySensor *sensor) { tracked_presence_sensor_ = sensor; }
   // Debug: report a fixed orientation/angle to the radar instead of the accelerometer's
   void set_force_direction(int dir, int angle) { force_direction_ = dir; force_angle_ = angle; }
   // Debug: replay the stock firmware's boot writes verbatim instead of our init
@@ -511,6 +527,14 @@ protected:
   // Only count targets the radar still flags active (last byte of the record).
   bool require_active_target_{true};
   uint32_t absence_timeout_ms_{30000};
+  // Tracked presence (filtered targets) is independent of derive_presence.
+  uint32_t tracked_hold_ms_{3000};
+  float wall_units_per_m_{100.0f};  // wall mode: target units per metre (measured ~100)
+  uint32_t tracked_last_hit_ms_{0};
+  text_sensor::TextSensor *valid_targets_sensor_{nullptr};
+  binary_sensor::BinarySensor *tracked_presence_sensor_{nullptr};
+  void update_tracked_states_(const std::vector<uint8_t> &payload, uint8_t count);
+  void check_tracked_absence_();
   int16_t motion_velocity_threshold_{15};
   uint32_t last_target_seen_ms_{0};
   uint32_t last_drop_log_ms_{0};

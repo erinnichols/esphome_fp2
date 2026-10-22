@@ -72,8 +72,13 @@ See [example_config.yaml](example_config.yaml) for a complete working configurat
 | `fall_detection` | `false` | With `fall_detection_sensitivity` |
 | `derive_presence` | `true` | Derive presence/motion/zone occupancy from targets when the radar sends no events (`absence_timeout`: 30s). Targets in exclude or interference cells are ignored; the radar itself keeps streaming them. |
 | `ignore_exit_targets` | `true` | Also ignore targets standing in `exit_grid` cells (doorways) when deriving presence – the radar keeps a target there while a door swings or someone passes outside |
-| `require_active_target` | `true` | Only count targets the radar still flags active; a dropped track keeps being sent with `active=0` until it ages out and would otherwise count as a second person |
+| `require_active_target` | `true` | Only count targets whose last record byte (`active`) is non-zero. Measured on FW 100: that byte is the radar's **zone id** of the zone containing the target (0 = in no zone), so this effectively means "inside some zone" |
 | `presence_event`, `people_count` | – | Text / numeric sensors (`people_count` counts valid targets when `derive_presence` is on; the radar's own count includes ghosts in excluded / off-grid cells) |
+| `tracked_presence` | – | Binary sensor: any valid target (after edge / interference / exit filtering). |
+| `valid_targets` | – | Text sensor, JSON: `{"count":N,"ignored":M,"targets":[{"id","x","y","col","row","v","zone"}]}` with only the targets that survive filtering (`zone` = id of first containing zone, 0 = none). |
+| `tracked_hold` | `3s` | How long `tracked_presence` (global and per zone) stays on after the last valid target. |
+| `wall_units_per_m` | `100` | Wall mode: target units per metre (measured ~100 on FW 100; one 0.5 m cell = half of this). |
+| zone `tracked_presence`, `target_count` | – | Per-zone binary sensor / valid-target count. Unlike the zone `presence` sensor (the radar's own answer, which ignores the interference map), these honor interference / edge / exit cells, so a fixed ghost (e.g. a laundry basket) no longer holds a zone occupied. They do not depend on `derive_presence`. |
 | `zones[].presence_sensitivity` | `medium` | Per-zone sensitivity |
 | `zones[].zone_type` | `0x0a` | Radar zone type (attribute `0x0152`); the stock app writes `0x0a` for the first zone and `0x24` for the second. A zone without a type is never reported by the radar |
 | `zones[].close_away` | `true` | Close/away reporting for the zone (attribute `0x0153`) |

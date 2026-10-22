@@ -98,6 +98,7 @@ void FP2Component::loop() {
   check_heartbeat_watchdog_();
   process_command_queue_();
   check_derived_absence_();
+  check_tracked_absence_();
 
   if (millis() - rx_stats_last_ms_ > 60000) {
     rx_stats_last_ms_ = millis();
@@ -983,6 +984,7 @@ void FP2Component::handle_location_tracking_report_(const std::vector<uint8_t> &
 
   if (derive_presence_)
     update_derived_states_(payload, count);
+  update_tracked_states_(payload, count);
 
   // Base64 encode the binary data
   std::string base64_str = esphome::base64_encode(binary_data);
@@ -1004,7 +1006,8 @@ bool FP2Component::target_cell_(int16_t x, int16_t y, int &col, int &row) const 
   } else {
     // Wall mode: measured ~1 cm per unit (about 100 units per metre), so one
     // 0.5 m cell is ~50 units. (The PR assumed 40 units per metre = 20 per cell.)
-    constexpr float WALL_UNITS_PER_CELL = 50.0f;
+    // Configurable via wall_units_per_m for units that measure differently.
+    const float WALL_UNITS_PER_CELL = wall_units_per_m_ * 0.5f;
     col = 8 - (int) floorf((float) x / WALL_UNITS_PER_CELL) - 1;
     row = (int) ((float) y / WALL_UNITS_PER_CELL);
   }
@@ -1106,6 +1109,97 @@ void FP2Component::update_derived_states_(const std::vector<uint8_t> &payload, u
         zone->publish_presence(true);
       if (zone->motion_sensor != nullptr && (!zone->motion_sensor->has_state() || zone->motion_sensor->state != zone_moving[z]))
         zone->publish_motion(zone_moving[z]);
+    }
+  }
+}
+
+// Tracked presence: the radar's own zone occupancy ignores the interference map
+// (a laundry basket "lying" at a fixed spot keeps the zone occupied), so count
+// only targets that survive the same filters as People Count and publish
+// per-zone presence / target counts plus a JSON list of the surviving targets.
+void FP2Component::update_tracked_states_(const std::vector<uint8_t> &payload, uint8_t count) {
+  if (!init_done_) return;
+  uint32_t now = millis();
+  std::vector<int> zone_count(zones_.size(), 0);
+  int valid = 0, ignored = 0;
+  std::string json;
+  json.reserve(40 + 70 * count);
+  for (int i = 0; i < count; i++) {
+    int off = 6 + i * 14;
+    if (off + 14 > (int) payload.size()) break;
+    uint8_t tid = payload[off];
+    int16_t x = (int16_t)((payload[off + 1] << 8) | payload[off + 2]);
+    int16_t y = (int16_t)((payload[off + 3] << 8) | payload[off + 4]);
+    int16_t v = (int16_t)((payload[off + 7] << 8) | payload[off + 8]);
+    uint8_t active = payload[off + 13];
+    if ((require_active_target_ && active == 0) || target_ignored_(x, y)) {
+      ignored++;
+      continue;
+    }
+    int col = -1, row = -1;
+    target_cell_(x, y, col, row);
+    int first_zone = 0;
+    for (size_t z = 0; z < zones_.size(); z++) {
+      if (zones_[z]->is_empty() || !zone_contains_(zones_[z], x, y)) continue;
+      zone_count[z]++;
+      if (first_zone == 0) first_zone = zones_[z]->id;
+    }
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%s{\"id\":%u,\"x\":%d,\"y\":%d,\"col\":%d,\"row\":%d,\"v\":%d,\"zone\":%d}",
+             valid == 0 ? "" : ",", tid, x, y, col, row, v, first_zone);
+    json += buf;
+    valid++;
+  }
+  if (valid_targets_sensor_ != nullptr) {
+    char head[48];
+    snprintf(head, sizeof(head), "{\"count\":%d,\"ignored\":%d,\"targets\":[", valid, ignored);
+    std::string out = head;
+    out += json;
+    out += "]}";
+    if (!valid_targets_sensor_->has_state() || valid_targets_sensor_->state != out)
+      valid_targets_sensor_->publish_state(out);
+  }
+  if (valid > 0) {
+    tracked_last_hit_ms_ = now;
+    if (tracked_presence_sensor_ != nullptr &&
+        (!tracked_presence_sensor_->has_state() || !tracked_presence_sensor_->state))
+      tracked_presence_sensor_->publish_state(true);
+  }
+  for (size_t z = 0; z < zones_.size(); z++) {
+    auto *zone = zones_[z];
+    if (zone->target_count_sensor != nullptr &&
+        (!zone->target_count_sensor->has_state() || (int) zone->target_count_sensor->state != zone_count[z]))
+      zone->target_count_sensor->publish_state(zone_count[z]);
+    if (zone_count[z] > 0) {
+      zone->tracked_last_hit_ms = now;
+      if (zone->tracked_presence_sensor != nullptr &&
+          (!zone->tracked_presence_sensor->has_state() || !zone->tracked_presence_sensor->state))
+        zone->tracked_presence_sensor->publish_state(true);
+    }
+  }
+}
+
+// Expire tracked presence after tracked_hold with no valid target. Runs from
+// loop() so it also fires when the radar stops sending target frames.
+void FP2Component::check_tracked_absence_() {
+  if (!init_done_) return;
+  uint32_t now = millis();
+  for (auto *zone : zones_) {
+    if (zone->tracked_presence_sensor == nullptr) continue;
+    // Publish an initial "clear" so the entity is not unknown until first hit.
+    if (!zone->tracked_presence_sensor->has_state()) {
+      zone->tracked_presence_sensor->publish_state(false);
+    } else if (zone->tracked_presence_sensor->state && now - zone->tracked_last_hit_ms > tracked_hold_ms_) {
+      zone->tracked_presence_sensor->publish_state(false);
+      if (zone->target_count_sensor != nullptr && zone->target_count_sensor->state != 0)
+        zone->target_count_sensor->publish_state(0);
+    }
+  }
+  if (tracked_presence_sensor_ != nullptr) {
+    if (!tracked_presence_sensor_->has_state()) {
+      tracked_presence_sensor_->publish_state(false);
+    } else if (tracked_presence_sensor_->state && now - tracked_last_hit_ms_ > tracked_hold_ms_) {
+      tracked_presence_sensor_->publish_state(false);
     }
   }
 }

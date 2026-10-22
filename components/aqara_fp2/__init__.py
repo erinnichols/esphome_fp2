@@ -239,6 +239,14 @@ ZONE_SCHEMA = (
             cv.Optional("close_away", default=True): cv.boolean,
             cv.Optional("zone_map_sensor"): text_sensor_.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
             cv.Optional(CONF_EVENT): text_sensor_.text_sensor_schema(icon="mdi:motion-sensor"),
+            # Presence / count from valid (non-ignored) tracked targets in this
+            # zone. Unlike `presence`, honors interference/edge/exit maps.
+            cv.Optional("tracked_presence"): binary_sensor.binary_sensor_schema(
+                device_class=DEVICE_CLASS_OCCUPANCY, icon="mdi:account-eye"
+            ),
+            cv.Optional("target_count"): sensor.sensor_schema(
+                icon="mdi:account-multiple", accuracy_decimals=0, state_class=STATE_CLASS_MEASUREMENT
+            ),
         }
     ).extend(ZONE_BASE_SCHEMA)
 )
@@ -294,6 +302,16 @@ CONFIG_SCHEMA = (
             # Only count targets the radar still flags active
             cv.Optional("require_active_target", default=True): cv.boolean,
             cv.Optional("absence_timeout", default="30s"): cv.positive_time_period_milliseconds,
+            # Hold time for tracked_presence sensors after the last valid target
+            cv.Optional("tracked_hold", default="3s"): cv.positive_time_period_milliseconds,
+            # Wall mode: target units per metre (measured ~100; the PR assumed 40)
+            cv.Optional("wall_units_per_m", default=100.0): cv.float_range(min=10.0, max=400.0),
+            # JSON of valid (non-ignored) targets: {"count","ignored","targets":[...]}
+            cv.Optional("valid_targets"): text_sensor_.text_sensor_schema(icon="mdi:target-account"),
+            # Any valid target anywhere
+            cv.Optional("tracked_presence"): binary_sensor.binary_sensor_schema(
+                device_class=DEVICE_CLASS_OCCUPANCY, icon="mdi:account-eye"
+            ),
 
             cv.Optional("edge_label_grid_sensor"): text_sensor_.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
             cv.Optional("entry_exit_grid_sensor"): text_sensor_.text_sensor_schema(entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
@@ -327,6 +345,8 @@ SENSOR_MAP = {
     CONF_TARGET_TRACKING: (text_sensor_.new_text_sensor, "set_target_tracking_sensor"),
     CONF_PRESENCE_EVENT: (text_sensor_.new_text_sensor, "set_presence_event_sensor"),
     CONF_PEOPLE_COUNT: (sensor.new_sensor, "set_people_count_sensor"),
+    "valid_targets": (text_sensor_.new_text_sensor, "set_valid_targets_sensor"),
+    "tracked_presence": (binary_sensor.new_binary_sensor, "set_tracked_presence_sensor"),
 
     # Text config sensors
     "edge_label_grid_sensor": (text_sensor_.new_text_sensor, "set_edge_label_grid_sensor"),
@@ -342,6 +362,8 @@ ZONE_SENSOR_MAP = {
     # Text config sensors
     "zone_map_sensor": (text_sensor_.new_text_sensor, "set_map_sensor"),
     CONF_EVENT: (text_sensor_.new_text_sensor, "set_event_sensor"),
+    "tracked_presence": (binary_sensor.new_binary_sensor, "set_tracked_presence_sensor"),
+    "target_count": (sensor.new_sensor, "set_target_count_sensor"),
 }
 
 SLEEP_SENSOR_MAP = {
@@ -409,6 +431,8 @@ async def to_code(config):
     cg.add(var.set_ignore_exit_targets(config["ignore_exit_targets"]))
     cg.add(var.set_require_active_target(config["require_active_target"]))
     cg.add(var.set_absence_timeout(config["absence_timeout"].total_milliseconds))
+    cg.add(var.set_tracked_hold(config["tracked_hold"].total_milliseconds))
+    cg.add(var.set_wall_units_per_m(config["wall_units_per_m"]))
     if "debug_force_direction" in config:
         cg.add(var.set_force_direction(config["debug_force_direction"], config["debug_force_angle"]))
 
