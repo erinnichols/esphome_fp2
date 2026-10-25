@@ -389,7 +389,7 @@ class AqaraFP2Card extends HTMLElement {
   // viewer's left (sensor at the top looking down the canvas). Wall mode
   // units are 2.5 cm (measured: 1 m ~ 40), i.e. 20 units per 0.5 m cell.
   toGrid(x, y) {
-    if (this.data.corner) return { gc: 2 + ((-x + 400) / 800) * 14, gr: (y / 800) * 14 };
+    if (this.data.corner) return { gc: 2 + (300 - x) / 50, gr: y / 50 };
     const u = this.config.wall_units_per_m || 40;  // radar units per meter (wall mode)
     return { gc: 8 - x / (u / 2), gr: y / (u / 2) };
   }

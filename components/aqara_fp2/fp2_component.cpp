@@ -1001,12 +1001,16 @@ void FP2Component::handle_location_tracking_report_(const std::vector<uint8_t> &
 // ---- Derived presence ----------------------------------------------------
 
 // Target coordinates are ~cm, radar at the top of the 14x14 grid (0.5 m cells).
-// Corner modes: X +400 = left edge, -400 = right edge, Y 0..800 (hansihe).
+// Corner modes: the radar's grid is 14 x 14 cells of 50 raw units, col = 2 + floor((300 - x) / 50),
+// row = floor(y / 50): x +300 = left edge, -400 = right edge (the radar clamps there), y 0..700.
+// Measured against the radar's own zone ids ('active') on a corner-mounted unit; the earlier
+// 800/14 (57 unit) lattice drifted up to a cell and a half by the far side of the room.
 // Wall mode: sensor top-centre, X negative = right.
 bool FP2Component::target_cell_(int16_t x, int16_t y, int &col, int &row) const {
   if (mounting_position_ == 0x02 || mounting_position_ == 0x03) {
-    col = 2 + (int) ((-(float) x + 400.0f) / 800.0f * 14.0f);
-    row = (int) ((float) y / 800.0f * 14.0f);
+    col = 2 + (int) floorf((300.0f - (float) x) / 50.0f);
+    row = (int) floorf((float) y / 50.0f);
+    if (col == 16 && x <= -400) col = 15;  // clamped at the right edge
   } else {
     // Wall mode: measured ~1 cm per unit (about 100 units per metre), so one
     // 0.5 m cell is ~50 units. (The PR assumed 40 units per metre = 20 per cell.)
