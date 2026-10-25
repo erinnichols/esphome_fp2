@@ -107,7 +107,7 @@ void FP2Component::loop() {
     // Orientation the radar is being told (from the accelerometer, or forced);
     // logged here so it can be read from OTA logs without catching the boot.
     ESP_LOGD(TAG, "Orientation sent to radar: direction=%u angle=%u%s", current_direction_(), current_angle_(),
-             force_direction_ >= 0 ? " (forced)" : "");
+             (force_direction_ >= 0 || force_angle_ >= 0) ? " (forced)" : "");
   }
 }
 

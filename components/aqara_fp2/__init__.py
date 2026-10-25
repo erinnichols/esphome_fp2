@@ -275,9 +275,14 @@ CONFIG_SCHEMA = (
             ),
             cv.Optional(CONF_SLEEP): SLEEP_SCHEMA,
             # Debug only: report a fixed orientation to the radar
+            # Orientation bucket sent to the radar instead of the accelerometer's
+            # (3 = SIDE / vertical wall mount, 6 = DOWN_TILT). A unit tilted past
+            # ~20 degrees reads DOWN_TILT, which on FW 100 shrinks wall-mode
+            # positions ~10x; forcing 3 restores ~100 units per metre.
             cv.Optional("debug_force_direction"): cv.int_range(min=0, max=8),
             cv.Optional("debug_replay_stock_init", default=False): cv.boolean,
-            cv.Optional("debug_force_angle", default=45): cv.int_range(min=0, max=360),
+            # Optional: omit to keep sending the accelerometer's real tilt angle
+            cv.Optional("debug_force_angle"): cv.int_range(min=0, max=360),
             **{
                 cv.Optional(k): select.select_schema(FP2SettingSelect, icon=icon, entity_category=ENTITY_CATEGORY_CONFIG)
                 for k, (_, _, icon) in SETTING_SELECTS.items()
@@ -434,7 +439,7 @@ async def to_code(config):
     cg.add(var.set_tracked_hold(config["tracked_hold"].total_milliseconds))
     cg.add(var.set_wall_units_per_m(config["wall_units_per_m"]))
     if "debug_force_direction" in config:
-        cg.add(var.set_force_direction(config["debug_force_direction"], config["debug_force_angle"]))
+        cg.add(var.set_force_direction(config["debug_force_direction"], config.get("debug_force_angle", -1)))
 
     if CONF_SLEEP in config:
         sleep_conf = config[CONF_SLEEP]
