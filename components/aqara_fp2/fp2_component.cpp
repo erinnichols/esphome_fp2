@@ -104,6 +104,10 @@ void FP2Component::loop() {
     rx_stats_last_ms_ = millis();
     ESP_LOGD(TAG, "RX stats: bytes=%" PRIu32 " frames=%" PRIu32 " dropped_sync=%" PRIu32 " ver_mismatch=%" PRIu32 " hdr_fail=%" PRIu32 " crc_fail=%" PRIu32 "",
              rx_bytes_, rx_frames_, rx_dropped_sync_, rx_ver_mismatch_, rx_hdr_fail_, rx_crc_fail_);
+    // Orientation the radar is being told (from the accelerometer, or forced);
+    // logged here so it can be read from OTA logs without catching the boot.
+    ESP_LOGD(TAG, "Orientation sent to radar: direction=%u angle=%u%s", current_direction_(), current_angle_(),
+             force_direction_ >= 0 ? " (forced)" : "");
   }
 }
 
