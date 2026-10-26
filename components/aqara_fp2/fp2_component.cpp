@@ -986,6 +986,7 @@ void FP2Component::handle_location_tracking_report_(const std::vector<uint8_t> &
                        payload.begin() + offset + 14);
   }
 
+  update_parking_(payload, count);
   if (derive_presence_)
     update_derived_states_(payload, count);
   update_tracked_states_(payload, count);
@@ -1076,11 +1077,12 @@ void FP2Component::update_derived_states_(const std::vector<uint8_t> &payload, u
     // A dropped track keeps being sent with active=0 until the radar ages it
     // out; counting those is what produced a second "person" in an empty room.
     bool drop_inactive = require_active_target_ && active == 0;
-    if (drop_inactive || target_ignored_(x, y)) {
+    bool parked = track_parked_(tid);
+    if (drop_inactive || parked || target_ignored_(x, y)) {
       if (now - last_drop_log_ms_ > 5000) {
         last_drop_log_ms_ = now;
         ESP_LOGD(TAG, "Target %u ignored (%s): x=%d y=%d cell=%d,%d snr=%d posture=%u",
-                 tid, drop_inactive ? "inactive" : "map", x, y, col, row, snr, posture);
+                 tid, drop_inactive ? "inactive" : (parked ? "parked" : "map"), x, y, col, row, snr, posture);
       }
       continue;
     }
@@ -1129,7 +1131,7 @@ void FP2Component::update_tracked_states_(const std::vector<uint8_t> &payload, u
   if (!init_done_) return;
   uint32_t now = millis();
   std::vector<int> zone_count(zones_.size(), 0);
-  int valid = 0, ignored = 0;
+  int valid = 0, ignored = 0, parked = 0;
   std::string json;
   json.reserve(40 + 70 * count);
   for (int i = 0; i < count; i++) {
@@ -1142,6 +1144,10 @@ void FP2Component::update_tracked_states_(const std::vector<uint8_t> &payload, u
     uint8_t active = payload[off + 13];
     if ((require_active_target_ && active == 0) || target_ignored_(x, y)) {
       ignored++;
+      continue;
+    }
+    if (track_parked_(tid)) {
+      parked++;
       continue;
     }
     int col = -1, row = -1;
@@ -1159,8 +1165,9 @@ void FP2Component::update_tracked_states_(const std::vector<uint8_t> &payload, u
     valid++;
   }
   if (valid_targets_sensor_ != nullptr) {
-    char head[48];
-    snprintf(head, sizeof(head), "{\"count\":%d,\"ignored\":%d,\"targets\":[", valid, ignored);
+    char head[64];
+    snprintf(head, sizeof(head), "{\"count\":%d,\"ignored\":%d,\"parked\":%d,\"targets\":[", valid, ignored,
+             parked);
     std::string out = head;
     out += json;
     out += "]}";
@@ -1185,6 +1192,101 @@ void FP2Component::update_tracked_states_(const std::vector<uint8_t> &payload, u
         zone->tracked_presence_sensor->publish_state(true);
     }
   }
+}
+
+// Parked tracks (see the header for the rules). Runs on every target frame,
+// before presence/count are derived, so both see the same parked set.
+void FP2Component::update_parking_(const std::vector<uint8_t> &payload, uint8_t count) {
+  if (!park_tracks_) return;
+  uint32_t now = millis();
+  for (auto &t : tracks_) t.seen = false;
+  for (int i = 0; i < count; i++) {
+    int off = 6 + i * 14;
+    if (off + 14 > (int) payload.size()) break;
+    uint8_t tid = payload[off];
+    int16_t x = (int16_t)((payload[off + 1] << 8) | payload[off + 2]);
+    int16_t y = (int16_t)((payload[off + 3] << 8) | payload[off + 4]);
+    TrackState *t = nullptr;
+    for (auto &s : tracks_) {
+      if (s.id == tid) { t = &s; break; }
+    }
+    if (t == nullptr) {
+      tracks_.push_back(TrackState{tid, x, y, x, y, now, now, 0, now, 0, false, true});
+      ESP_LOGD(TAG, "Track %u new at x=%d y=%d", tid, x, y);
+      continue;
+    }
+    t->seen = true;
+    if (now - t->snap_ms >= WALK_CHECK_MS) {
+      int wx = x - t->snap_x, wy = y - t->snap_y;
+      if (wx * wx + wy * wy >= WALK_UNITS * WALK_UNITS) t->walking_until_ms = now + WALK_HOLD_MS;
+      t->snap_x = x;
+      t->snap_y = y;
+      t->snap_ms = now;
+    }
+    int dx = x - t->anchor_x, dy = y - t->anchor_y;
+    if (dx * dx + dy * dy > park_move_threshold_ * park_move_threshold_) {
+      if (t->parked)
+        ESP_LOGD(TAG, "Track %u un-parked: moved to x=%d y=%d after %us parked", tid, x, y,
+                 (unsigned) ((now - t->parked_ms) / 1000));
+      t->parked = false;
+      t->anchor_x = x;
+      t->anchor_y = y;
+      t->last_move_ms = now;
+    }
+  }
+  for (auto it = tracks_.begin(); it != tracks_.end();) {
+    if (!it->seen) {
+      ESP_LOGD(TAG, "Track %u gone from x=%d y=%d after %us%s", it->id, it->anchor_x, it->anchor_y,
+               (unsigned) ((now - it->first_seen_ms) / 1000), it->parked ? " (was parked)" : "");
+      it = tracks_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto &t : tracks_) {
+    if (t.parked) continue;
+    uint32_t still = now - t.last_move_ms;
+    bool exit_due = exit_park_after_ms_ > 0 && still >= exit_park_after_ms_;
+    if (!exit_due && still < park_after_ms_) continue;
+    int col = -1, row = -1;
+    bool in_grid = target_cell_(t.anchor_x, t.anchor_y, col, row);
+    if (in_grid && has_rest_grid_ && grid_has_(rest_grid_, col, row)) continue;
+    const char *why = nullptr;
+    if (exit_due && in_grid && near_exit_(col, row, exit_park_radius_)) {
+      why = "near an exit";
+    } else if (still >= park_after_ms_) {
+      for (auto &o : tracks_) {
+        if (o.id != t.id && !o.parked && (int32_t) (o.walking_until_ms - now) > 0) {
+          why = "still while another track walks";
+          break;
+        }
+      }
+    }
+    if (why != nullptr) {
+      t.parked = true;
+      t.parked_ms = now;
+      ESP_LOGD(TAG, "Track %u parked (%s) at x=%d y=%d cell=%d,%d after %us still", t.id, why, t.anchor_x,
+               t.anchor_y, col, row, (unsigned) (still / 1000));
+    }
+  }
+}
+
+bool FP2Component::track_parked_(uint8_t tid) const {
+  for (const auto &t : tracks_) {
+    if (t.id == tid) return t.parked;
+  }
+  return false;
+}
+
+bool FP2Component::near_exit_(int col, int row, int radius) const {
+  if (!has_exit_grid_) return false;
+  for (int r = row - radius; r <= row + radius; r++) {
+    for (int c = col - radius; c <= col + radius; c++) {
+      if (r < 0 || r > 19 || c < 0 || c > 15) continue;
+      if (grid_has_(exit_grid_, c, r)) return true;
+    }
+  }
+  return false;
 }
 
 // Expire tracked presence after tracked_hold with no valid target. Runs from
@@ -1365,6 +1467,17 @@ void FP2Component::set_interference_grid(const std::vector<uint8_t> &grid) {
     ESP_LOGI(TAG, "Interference grid configured successfully");
   } else {
     ESP_LOGW(TAG, "Interference grid size mismatch! Expected 40, got %d", grid.size());
+  }
+}
+
+void FP2Component::set_rest_grid(const std::vector<uint8_t> &grid) {
+  // Firmware-only (never sent to the radar): cells where people sit still on
+  // purpose, so their tracks are never parked.
+  if (grid.size() == 40) {
+    std::copy(grid.begin(), grid.end(), rest_grid_.begin());
+    has_rest_grid_ = true;
+  } else {
+    ESP_LOGW(TAG, "Rest grid size mismatch! Expected 40, got %d", grid.size());
   }
 }
 

@@ -309,6 +309,18 @@ CONFIG_SCHEMA = (
             cv.Optional("absence_timeout", default="30s"): cv.positive_time_period_milliseconds,
             # Hold time for tracked_presence sensors after the last valid target
             cv.Optional("tracked_hold", default="3s"): cv.positive_time_period_milliseconds,
+            # Parked tracks: frozen tracks left behind where a person went out of
+            # view or a new track took over stop counting (People Count, Valid
+            # Targets, tracked presence). Radar zone presence is not affected.
+            cv.Optional("park_tracks", default=True): cv.boolean,
+            cv.Optional("park_after", default="20s"): cv.positive_time_period_milliseconds,
+            # Exit latch (off unless set): park a track that stopped near an exit
+            # cell after this long, even when it is the only track
+            cv.Optional("exit_park_after"): cv.positive_time_period_milliseconds,
+            cv.Optional("exit_park_radius", default=1): cv.int_range(min=0, max=3),
+            cv.Optional("park_move_threshold", default=25): cv.int_range(min=5, max=200),
+            # Cells where people sit still on purpose (bed, sofa, desk): never parked
+            cv.Optional("rest_grid"): parse_ascii_grid,
             # Wall mode: target units per metre (measured ~100; the PR assumed 40)
             cv.Optional("wall_units_per_m", default=100.0): cv.float_range(min=10.0, max=400.0),
             # JSON of valid (non-ignored) targets: {"count","ignored","targets":[...]}
@@ -437,6 +449,14 @@ async def to_code(config):
     cg.add(var.set_require_active_target(config["require_active_target"]))
     cg.add(var.set_absence_timeout(config["absence_timeout"].total_milliseconds))
     cg.add(var.set_tracked_hold(config["tracked_hold"].total_milliseconds))
+    cg.add(var.set_park_tracks(config["park_tracks"]))
+    cg.add(var.set_park_after(config["park_after"].total_milliseconds))
+    if "exit_park_after" in config:
+        cg.add(var.set_exit_park_after(config["exit_park_after"].total_milliseconds))
+    cg.add(var.set_exit_park_radius(config["exit_park_radius"]))
+    cg.add(var.set_park_move_threshold(config["park_move_threshold"]))
+    if "rest_grid" in config:
+        cg.add(var.set_rest_grid(config["rest_grid"]))
     cg.add(var.set_wall_units_per_m(config["wall_units_per_m"]))
     if "debug_force_direction" in config:
         cg.add(var.set_force_direction(config["debug_force_direction"], config.get("debug_force_angle", -1)))

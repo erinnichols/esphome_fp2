@@ -309,6 +309,13 @@ public:
   void set_require_active_target(bool v) { require_active_target_ = v; }
   void set_absence_timeout(uint32_t ms) { absence_timeout_ms_ = ms; }
   void set_tracked_hold(uint32_t ms) { tracked_hold_ms_ = ms; }
+  // Parked tracks: see update_parking_()
+  void set_park_tracks(bool v) { park_tracks_ = v; }
+  void set_park_after(uint32_t ms) { park_after_ms_ = ms; }
+  void set_exit_park_after(uint32_t ms) { exit_park_after_ms_ = ms; }
+  void set_exit_park_radius(int cells) { exit_park_radius_ = cells; }
+  void set_park_move_threshold(int units) { park_move_threshold_ = units; }
+  void set_rest_grid(const std::vector<uint8_t> &grid);
   void set_wall_units_per_m(float v) { wall_units_per_m_ = v; }
   void set_valid_targets_sensor(text_sensor::TextSensor *sensor) { valid_targets_sensor_ = sensor; }
   void set_tracked_presence_sensor(binary_sensor::BinarySensor *sensor) { tracked_presence_sensor_ = sensor; }
@@ -534,6 +541,35 @@ protected:
   text_sensor::TextSensor *valid_targets_sensor_{nullptr};
   binary_sensor::BinarySensor *tracked_presence_sensor_{nullptr};
   void update_tracked_states_(const std::vector<uint8_t> &payload, uint8_t count);
+  // Parked tracks. The radar leaves a track frozen where a person stopped being
+  // visible (walked out of view, out a door, up the stairs) or where a new track
+  // took over the person, and keeps reporting it. A track is "parked" (excluded
+  // from People Count, Valid Targets and tracked presence) when it has not moved
+  // for park_after while another track is walking (>= 0.5 m in ~2 s, so ghost
+  // jitter does not count), or - only when exit_park_after is set - for
+  // exit_park_after within exit_park_radius cells of an exit cell. Rest cells
+  // (bed, sofa, desk) never park. A parked track un-parks as soon as it moves.
+  struct TrackState {
+    uint8_t id;
+    int16_t anchor_x, anchor_y;  // position at its last move
+    int16_t snap_x, snap_y;      // position at the last walking check
+    uint32_t first_seen_ms, last_move_ms, parked_ms, snap_ms, walking_until_ms;
+    bool parked, seen;
+  };
+  std::vector<TrackState> tracks_;
+  bool park_tracks_{true};
+  uint32_t park_after_ms_{20000};
+  uint32_t exit_park_after_ms_{0};  // 0 = exit latch off
+  int exit_park_radius_{1};
+  int park_move_threshold_{25};          // raw units (~25 cm)
+  static const uint32_t WALK_CHECK_MS = 2000;  // walking = moved >= WALK_UNITS over this long
+  static const int WALK_UNITS = 50;
+  static const uint32_t WALK_HOLD_MS = 3000;   // a track counts as walking this long after
+  GridMap rest_grid_{};
+  bool has_rest_grid_{false};
+  void update_parking_(const std::vector<uint8_t> &payload, uint8_t count);
+  bool track_parked_(uint8_t tid) const;
+  bool near_exit_(int col, int row, int radius) const;
   void check_tracked_absence_();
   int16_t motion_velocity_threshold_{15};
   uint32_t last_target_seen_ms_{0};
